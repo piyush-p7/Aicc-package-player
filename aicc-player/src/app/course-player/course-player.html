@@ -1,0 +1,116 @@
+<div class="course-player">
+  <header class="app-header">
+    <h1>AICC Course Player</h1>
+    <p class="subtitle">Upload AICC course ZIP packages to launch them</p>
+  </header>
+
+  @if (error()) {
+    <div class="error-message">
+      <p>{{ error() }}</p>
+    </div>
+  }
+
+  @if (!activeCourse()) {
+    <!-- Upload Area -->
+    <div
+      class="upload-zone"
+      [class.dragging]="isDragging()"
+      (dragover)="onDragOver($event)"
+      (dragleave)="onDragLeave($event)"
+      (drop)="onDrop($event)">
+      <div class="upload-content">
+        <div class="upload-icon">📦</div>
+        <p class="upload-text">Drag & drop AICC course ZIP files here</p>
+        <p class="upload-or">or</p>
+        <label class="upload-btn">
+          Browse Files
+          <input type="file" accept=".zip" multiple (change)="onFileSelect($event)" hidden>
+        </label>
+      </div>
+    </div>
+
+    <!-- Course List -->
+    @if (courses().length > 0) {
+      <div class="course-list">
+        <h2>Uploaded Courses</h2>
+        @for (course of courses(); track course.courseId) {
+          <div class="course-card">
+            <div class="course-card-info">
+              <h3>{{ course.title || course.fileName }}</h3>
+              <div class="course-card-meta">
+                <span class="badge">{{ course.courseId }}</span>
+                <span class="meta-text">{{ course.creator }}</span>
+                <span class="meta-text">v{{ course.version }}</span>
+                <span class="meta-text">{{ course.assignableUnits.length }} unit(s)</span>
+              </div>
+            </div>
+            <div class="course-card-actions">
+              <button class="btn btn-primary" (click)="viewCourse(course)">Open</button>
+              <button class="btn btn-danger" (click)="removeCourse(course)">Remove</button>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  } @else {
+    <!-- Course Detail View -->
+    <div class="course-detail">
+      <button class="btn btn-back" (click)="backToList()">← Back to courses</button>
+
+      <div class="detail-header">
+        <h2>{{ activeCourse()!.title }}</h2>
+        <div class="detail-meta">
+          <span class="badge">{{ activeCourse()!.courseId }}</span>
+          <span class="meta-text">{{ activeCourse()!.creator }}</span>
+          <span class="meta-text">Version {{ activeCourse()!.version }}</span>
+        </div>
+      </div>
+
+      @if (activeCourse()!.description) {
+        <div class="detail-description">
+          <p>{{ activeCourse()!.description }}</p>
+        </div>
+      }
+
+      <!-- Open Mode Toggle -->
+      <div class="open-mode-toggle">
+        <label class="toggle-label">
+          <span class="toggle-text">Open in new window</span>
+          <div class="toggle-switch" [class.active]="openInNewWindow()" (click)="toggleOpenMode()">
+            <div class="toggle-knob"></div>
+          </div>
+        </label>
+      </div>
+
+      <div class="au-list">
+        <h3>Assignable Units</h3>
+        @for (au of activeCourse()!.assignableUnits; track au.systemId) {
+          <div class="au-card">
+            <div class="au-info">
+              <h4>{{ au.title || au.systemId }}</h4>
+              @if (au.description) {
+                <p class="au-desc">{{ au.description }}</p>
+              }
+              <span class="au-url">{{ au.launchUrl }}</span>
+            </div>
+            <button class="btn btn-launch" (click)="launchUnit(au)">
+              ▶ Launch
+            </button>
+          </div>
+        }
+      </div>
+
+      <!-- Embedded Course View -->
+      @if (embeddedUrl()) {
+        <div class="embedded-container">
+          <div class="embedded-header">
+            <span>Course Running</span>
+            <button class="btn btn-danger" (click)="closeEmbedded()">✕ Close</button>
+          </div>
+          <iframe [src]="embeddedUrl()" class="embedded-iframe" allow="fullscreen"></iframe>
+        </div>
+      }
+    </div>
+  }
+</div>
+

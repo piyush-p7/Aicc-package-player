@@ -1,0 +1,20 @@
+[build]
+  command = "npm run build"
+  publish = "dist/aicc-player/browser"
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/api/hacp/*"
+  to = "/.netlify/functions/hacp"
+  status = 200
+
+[[redirects]]
+  from = "/api/hacp"
+  to = "/.netlify/functions/hacp"
+  status = 200
+
+# SPA fallback - must be last
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
