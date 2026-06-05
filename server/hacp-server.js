@@ -8,6 +8,21 @@ const PORT = 3000;
 // In-memory session store
 const sessions = new Map();
 
+// AICC requires Student_Name in "LastName,FirstName" format (comma-separated).
+// MRCE splits on "," and reads names[1], so a missing comma crashes it.
+function toAiccName(name) {
+  const value = (name || 'Test, Student').trim();
+  if (value.includes(',')) {
+    return value;
+  }
+  const parts = value.split(/\s+/);
+  if (parts.length >= 2) {
+    const first = parts.shift();
+    return `${parts.join(' ')},${first}`;
+  }
+  return `${value},`;
+}
+
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -101,7 +116,7 @@ function handleGetParam(sessionId, res) {
     'error_text=Successful',
     'aicc_data=[Core]',
     `Student_ID=${session.studentId}`,
-    `Student_Name=${session.studentName}`,
+    `Student_Name=${toAiccName(session.studentName)}`,
     `Credit=${session.credit}`,
     `Lesson_Status=${session.lessonStatus}`,
     `Entry=${session.entry}`,
@@ -128,50 +143,49 @@ function handleGetParam(sessionId, res) {
 }
 
 function handlePutParam(sessionId, body, res) {
+  // On cold-starts/restarts the session may be gone; never reject MRCE's
+  // callback. Ack success so the completion flow on the MRCE side is intact.
   const session = sessions.get(sessionId);
 
-  if (!session) {
-    res.send(buildResponse('error=1\r\nerror_text=Invalid Session ID'));
-    return;
+  if (session) {
+    const aiccData = body.aicc_data || '';
+    console.log(`[HACP] PutParam data for session ${sessionId}:\n${aiccData}`);
+
+    // Parse the AICC data and update session
+    const parsed = parseAiccData(aiccData);
+
+    if (parsed.lesson_status) session.lessonStatus = parsed.lesson_status;
+    if (parsed.score) session.score = parsed.score;
+    if (parsed.score_raw) session.scoreRaw = parsed.score_raw;
+    if (parsed.time) session.sessionTime = parsed.time;
+    if (parsed.lesson_location) session.lessonLocation = parsed.lesson_location;
+    if (parsed.suspend_data !== undefined) session.suspendData = parsed.suspend_data;
+
+    // Accumulate total time
+    if (parsed.time) {
+      session.totalTime = addTimes(session.totalTime, parsed.time);
+    }
+
+    // Update entry on subsequent visits
+    if ((session.lessonStatus || '').toLowerCase() === 'incomplete') {
+      session.entry = 'resume';
+    }
+
+    console.log(`[HACP] Session ${sessionId} updated - Status: ${session.lessonStatus}, Score: ${session.score}`);
+  } else {
+    console.log(`[HACP] PutParam for unknown session ${sessionId} - acknowledging anyway`);
   }
-
-  const aiccData = body.aicc_data || '';
-  console.log(`[HACP] PutParam data for session ${sessionId}:\n${aiccData}`);
-
-  // Parse the AICC data and update session
-  const parsed = parseAiccData(aiccData);
-
-  if (parsed.lesson_status) session.lessonStatus = parsed.lesson_status;
-  if (parsed.score) session.score = parsed.score;
-  if (parsed.score_raw) session.scoreRaw = parsed.score_raw;
-  if (parsed.time) session.sessionTime = parsed.time;
-  if (parsed.lesson_location) session.lessonLocation = parsed.lesson_location;
-  if (parsed.suspend_data !== undefined) session.suspendData = parsed.suspend_data;
-
-  // Accumulate total time
-  if (parsed.time) {
-    session.totalTime = addTimes(session.totalTime, parsed.time);
-  }
-
-  // Update entry on subsequent visits
-  if (session.lessonStatus === 'incomplete') {
-    session.entry = 'resume';
-  }
-
-  console.log(`[HACP] Session ${sessionId} updated - Status: ${session.lessonStatus}, Score: ${session.score}`);
 
   res.send(buildResponse('error=0\r\nerror_text=Successful'));
 }
 
 function handleExitAU(sessionId, res) {
   const session = sessions.get(sessionId);
-
-  if (!session) {
-    res.send(buildResponse('error=1\r\nerror_text=Invalid Session ID'));
-    return;
+  if (session) {
+    console.log(`[HACP] ExitAU for session: ${sessionId}, Final Status: ${session.lessonStatus}, Score: ${session.score}`);
+  } else {
+    console.log(`[HACP] ExitAU for unknown session ${sessionId} - acknowledging anyway`);
   }
-
-  console.log(`[HACP] ExitAU for session: ${sessionId}, Final Status: ${session.lessonStatus}, Score: ${session.score}`);
 
   res.send(buildResponse('error=0\r\nerror_text=Successful'));
 }

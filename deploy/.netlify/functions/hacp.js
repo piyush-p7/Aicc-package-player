@@ -184,32 +184,28 @@ function handleGetParam(sessionId, headers) {
 }
 
 function handlePutParam(sessionId, body, headers) {
+  // On serverless cold-starts the session may live on a different instance.
+  // Never reject MRCE's callback; ack success so the completion flow is intact.
   const session = sessions.get(sessionId);
 
-  if (!session) {
-    return {
-      statusCode: 200,
-      headers,
-      body: 'error=1\r\nerror_text=Invalid Session ID',
-    };
-  }
+  if (session) {
+    const aiccData = body.aicc_data || '';
+    const parsed = parseAiccData(aiccData);
 
-  const aiccData = body.aicc_data || '';
-  const parsed = parseAiccData(aiccData);
+    if (parsed.lesson_status) session.lessonStatus = parsed.lesson_status;
+    if (parsed.score) session.score = parsed.score;
+    if (parsed.score_raw) session.scoreRaw = parsed.score_raw;
+    if (parsed.time) session.sessionTime = parsed.time;
+    if (parsed.lesson_location) session.lessonLocation = parsed.lesson_location;
+    if (parsed.suspend_data !== undefined) session.suspendData = parsed.suspend_data;
 
-  if (parsed.lesson_status) session.lessonStatus = parsed.lesson_status;
-  if (parsed.score) session.score = parsed.score;
-  if (parsed.score_raw) session.scoreRaw = parsed.score_raw;
-  if (parsed.time) session.sessionTime = parsed.time;
-  if (parsed.lesson_location) session.lessonLocation = parsed.lesson_location;
-  if (parsed.suspend_data !== undefined) session.suspendData = parsed.suspend_data;
+    if (parsed.time) {
+      session.totalTime = addTimes(session.totalTime, parsed.time);
+    }
 
-  if (parsed.time) {
-    session.totalTime = addTimes(session.totalTime, parsed.time);
-  }
-
-  if (session.lessonStatus === 'incomplete') {
-    session.entry = 'resume';
+    if ((session.lessonStatus || '').toLowerCase() === 'incomplete') {
+      session.entry = 'resume';
+    }
   }
 
   return {
@@ -220,16 +216,7 @@ function handlePutParam(sessionId, body, headers) {
 }
 
 function handleExitAU(sessionId, headers) {
-  const session = sessions.get(sessionId);
-
-  if (!session) {
-    return {
-      statusCode: 200,
-      headers,
-      body: 'error=1\r\nerror_text=Invalid Session ID',
-    };
-  }
-
+  // Always acknowledge ExitAU, even if the in-memory session is gone.
   return {
     statusCode: 200,
     headers,
