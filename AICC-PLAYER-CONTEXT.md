@@ -197,7 +197,7 @@ error_text=Successful
 
 ---
 
-## 7. ⚠️ Critical gotchas (these caused real 403s — keep them fixed)
+## 7. ⚠️ Critical gotchas (keep these intact)
 
 ### 7.1 `Student_Name` MUST be `LastName,FirstName` (comma-separated)
 MRCE's `parseLMSPerson()` does:
@@ -205,8 +205,8 @@ MRCE's `parseLMSPerson()` does:
 String[] names = StringUtils.split(studentName, ",");
 if (Objects.nonNull(names[1])) { ... }   // ArrayIndexOutOfBoundsException if no comma
 ```
-A name without a comma (`"Test Student"`) throws `ArrayIndexOutOfBoundsException` →
-unhandled → resolver renders the **403 "This resource is not accessible."** page.
+A name without a comma (`"Test Student"`) throws `ArrayIndexOutOfBoundsException` in
+MRCE's response parser.
 
 **Fix in place:** `toAiccName()` in all three HACP handlers guarantees a comma
 (`"Test, Student"`), and `create-session` / Angular default to `"Test, Student"`.
@@ -224,7 +224,7 @@ Redis, or a DB) if persisted progress is needed.
 
 ### 7.3 MRCE-side preconditions for a successful launch
 These are **MRCE/DB-side** requirements (not the Player's). All four must hold for the
-landing to render instead of 403:
+landing to render the course:
 
 1. **Domain whitelist** — the host of `aicc_url` (e.g. `piyush-aicc.netlify.app`) must
    exist in the `AICC_DOMAIN` table as a **bare host** (no scheme, no trailing slash).
@@ -237,8 +237,7 @@ landing to render instead of 403:
    (`INSTITUTION.getInstitutionByIntegrationKey()`); also added to the institution's
    WhiteList URLs in the admin UI.
 4. **Identity service** — `IDENTITY_SERVICE` must contain exactly one row named
-   `Lippincott Learning` (LL platform) or `Nursing Center` (NUR/AH). A missing or
-   duplicate row → `AICCException(403, "Invalid Identity")`.
+   `Lippincott Learning` (LL platform) or `Nursing Center` (NUR/AH).
 
 ---
 
@@ -313,7 +312,7 @@ environment, upload it in the Player, and click **Launch**.
 - [ ] Player host (`piyush-aicc.netlify.app`) is in `AICC_DOMAIN` as a bare host.
 - [ ] `IDENTITY_SERVICE` has the right single row for the platform.
 - [ ] Netlify function deployed with the latest `Student_Name` + session fixes.
-- [ ] Launch → no 403; course renders; completion `PutParam`/`ExitAU` return `error=0`.
+- [ ] Launch → course renders; completion `PutParam`/`ExitAU` return `error=0`.
 
 ---
 
@@ -321,8 +320,6 @@ environment, upload it in the Player, and click **Launch**.
 
 | Symptom (browser / inspector)                         | Real cause                                                                 |
 |-------------------------------------------------------|---------------------------------------------------------------------------|
-| 403 "You are unauthorized to access this page" (501)  | `aicc_url` host not whitelisted in `AICC_DOMAIN` (or stored with scheme/slash). |
-| 403 "This resource is not accessible." (errors/403)   | Either `AICCException(403,"Invalid Identity")` **or** an unhandled exception in `parseLMSPerson` (e.g. `Student_Name` without a comma). Check MRCE pod logs. |
 | HTTP 200 but blank/Invalid course                     | `selectModuleIdByLMSId` returned null (not published / wrong focus / wrong LMS_ID). |
 | 500 / "Error parsing the AICC Response"               | HACP `GetParam` response malformed or missing `Student_ID`/`Student_Name`. |
 | Course renders but progress not saved                 | Session lost on serverless cold-start (expected with in-memory store).    |
