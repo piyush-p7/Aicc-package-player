@@ -122,15 +122,21 @@ function handleHacp(event, headers) {
 }
 
 function handleGetParam(sessionId, headers) {
-  const session = sessions.get(sessionId);
-
-  if (!session) {
-    return {
-      statusCode: 200,
-      headers,
-      body: 'error=1\r\nerror_text=Invalid Session ID',
-    };
-  }
+  const session = sessions.get(sessionId) || {
+    studentId: 'student_001',
+    studentName: 'Test, Student',
+    credit: 'credit',
+    lessonStatus: 'not attempted',
+    entry: 'ab-initio',
+    score: '',
+    totalTime: '0000:00:00.00',
+    lessonLocation: '',
+    suspendData: '',
+    lessonMode: 'normal',
+    masteryScore: '',
+    comments: '',
+    objectives: '',
+  };
 
   const aiccData = [
     'error=0',
