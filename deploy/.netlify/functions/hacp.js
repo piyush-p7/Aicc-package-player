@@ -4,6 +4,21 @@ const crypto = require('crypto');
 // Note: This resets when the function cold-starts. For production, use a database.
 const sessions = new Map();
 
+// AICC requires Student_Name in "LastName,FirstName" format (comma-separated).
+// MRCE splits on "," and reads names[1], so a missing comma crashes it.
+function toAiccName(name) {
+  const value = (name || 'Test, Student').trim();
+  if (value.includes(',')) {
+    return value;
+  }
+  const parts = value.split(/\s+/);
+  if (parts.length >= 2) {
+    const first = parts.shift();
+    return `${parts.join(' ')},${first}`;
+  }
+  return `${value},`;
+}
+
 exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -49,7 +64,7 @@ function handleCreateSession(event, headers) {
   sessions.set(sessionId, {
     courseId: courseId || '',
     studentId: studentId || 'student_001',
-    studentName: studentName || 'Test Student',
+    studentName: studentName || 'Test, Student',
     credit: 'credit',
     lessonStatus: 'not attempted',
     entry: 'ab-initio',
@@ -143,7 +158,7 @@ function handleGetParam(sessionId, headers) {
     'error_text=Successful',
     'aicc_data=[Core]',
     `Student_ID=${session.studentId}`,
-    `Student_Name=${session.studentName}`,
+    `Student_Name=${toAiccName(session.studentName)}`,
     `Credit=${session.credit}`,
     `Lesson_Status=${session.lessonStatus}`,
     `Entry=${session.entry}`,

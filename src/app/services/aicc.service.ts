@@ -177,7 +177,7 @@ export class AiccService {
       body: JSON.stringify({
         courseId,
         studentId: 'student_001',
-        studentName: 'Test Student',
+        studentName: 'Test, Student',
       }),
     });
     const data = await response.json();

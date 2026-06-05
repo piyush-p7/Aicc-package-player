@@ -1,0 +1,15 @@
+[Course]
+Course_Creator=Wolters Kluwer Health
+Course_ID=LPDSCT
+Course_System=Lippincott Professional Development
+Course_Title=LPDSCT
+Level=1
+Max_Fields_CST=2
+Total_AUs=1
+Total_Blocks=0
+Total_Objectives=0
+Version=1.0
+[Course_Behavior]
+Max_Normal=99
+[Course_Description]
+Description:

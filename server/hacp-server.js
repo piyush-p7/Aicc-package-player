@@ -50,7 +50,7 @@ app.post('/hacp/create-session', (req, res) => {
   sessions.set(sessionId, {
     courseId: courseId || '',
     studentId: studentId || 'student_001',
-    studentName: studentName || 'Test Student',
+    studentName: studentName || 'Test, Student',
     credit: 'credit',
     lessonStatus: 'not attempted',
     entry: 'ab-initio',
