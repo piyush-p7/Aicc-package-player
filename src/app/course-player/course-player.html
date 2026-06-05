@@ -76,9 +76,18 @@
       <div class="open-mode-toggle">
         <label class="toggle-label">
           <span class="toggle-text">Open in new window</span>
-          <div class="toggle-switch" [class.active]="openInNewWindow()" (click)="toggleOpenMode()">
+          <div class="toggle-switch" [class.active]="openInNewWindow()" [class.disabled]="cornerstoneMode()" (click)="cornerstoneMode() ? null : toggleOpenMode()">
             <div class="toggle-knob"></div>
           </div>
+        </label>
+        <label class="toggle-label cornerstone-toggle">
+          <span class="toggle-text">🏢 Cornerstone LMS Mode</span>
+          <div class="toggle-switch cornerstone" [class.active]="cornerstoneMode()" (click)="toggleCornerstoneMode()">
+            <div class="toggle-knob"></div>
+          </div>
+          @if (cornerstoneMode()) {
+            <span class="toggle-hint">Simulates nested iframe (like mymlc.csod.com)</span>
+          }
         </label>
       </div>
 
@@ -102,9 +111,12 @@
 
       <!-- Embedded Course View -->
       @if (embeddedUrl()) {
-        <div class="embedded-container">
+        <div class="embedded-container" [class.cornerstone-active]="cornerstoneMode()">
           <div class="embedded-header">
             <span>Course Running</span>
+            @if (cornerstoneMode()) {
+              <span class="cornerstone-badge">Cornerstone Simulation</span>
+            }
             <button class="btn btn-danger" (click)="closeEmbedded()">✕ Close</button>
           </div>
           <iframe [src]="embeddedUrl()" class="embedded-iframe" allow="fullscreen"></iframe>
