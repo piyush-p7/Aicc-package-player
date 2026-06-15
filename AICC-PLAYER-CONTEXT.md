@@ -329,3 +329,132 @@ environment, upload it in the Player, and click **Launch**.
 `No Student ID was provided from the LMS Server` (HACP callback),
 `UnAuthorized AICC IntegrationKey` (integration key), or a stack trace at
 `AICCClient.parseLMSPerson(...)` (response parsing, e.g. the comma bug).
+
+---
+
+## 13. NS-25485 Investigation — Cornerstone LMS "refused to connect"
+
+### Jira Ticket
+- **Key:** NS-25485
+- **Summary:** LL: Users are encountering an error when attempting to view the course within their LMS
+- **SF Case:** 07124147
+- **Institution:** Mosaic Life Care
+- **LMS:** Cornerstone (`mymlc.csod.com`)
+- **Affected Users:** Cori Criger, Karen Christians Parham, Jackie Vertin
+- **Integration Key:** `hj8cdjvh3kxr3`
+- **LMS Course ID:** `CC00250`
+
+### The Error (Screenshot from user)
+The user sees: **"nursing.ceconnection.com refused to connect."** — a browser-level
+connection refusal displayed inside Cornerstone's training player iframe at:
+```
+https://mymlc.csod.com/ui/training/app/targetUser/48624/trainingID/56cbaa70-f667-4b1c-965e-4e16203c3f35?trainingType=Course&action=2&isM6ILT=true&isOCSE=true&isSTROA=true&isUFE=true&isIPOCE=true
+```
+
+### Production Log Analysis (May 27, 2026 ~15:48 UTC / 21:18 IST)
+
+Logs from New Relic (`CEC_ll` entity) confirm:
+
+#### Jackie Vertin (student_id: 24872)
+- **15:48:05.549** — Landing hit: `aicc_url=https://mymlc.csod.com/LMS/scorm/aicc.aspx`, `integration_key=hj8cdjvh3kxr3`, `lms_course_id=CC00250`
+- **15:48:08.121** — AICC GetParam succeeds: `error=0`, `student_name=Vertin,Jackie`, `lesson_status=incomplete`, `score=70`, `attempt_number=2`
+- **15:48:08.258** — Temp username created: `Jackie.Vertin.67916`
+- **15:48:08.500** — Person resolved: `personId=937443`, `institutionId=68188`
+- **15:48:09.086** — View rendered: `aicc/aiccLmsTemplate` ✅
+
+#### Karen Christians Parham (student_id: 7348)
+- **15:48:53.970** — Landing hit: same integration_key, `aicc_sid=AICCQbGMo8HLL14o0rx9ETTf9w`
+- **15:48:54.328** — AICC GetParam succeeds: `error=0`, `student_name=Christians Parham,Karen`, `lesson_status=passed`, `score=80`
+- **15:48:54.429** — Temp username: `Karen.ChristiansParham.40427`
+- **15:49:09.140** — View rendered: `aicc/aiccLmsTemplate` ✅
+
+#### Key log observations
+- **No `PermissionDeniedException`** — `csod.com` IS whitelisted in `AICC_DOMAIN` table
+- **No `AICCException("UnAuthorized AICC Domain")`** — domain validation passes
+- **AICC handshake succeeds** server-to-server (`error=0, error_text=successful`)
+- **Template renders** — `aiccLmsTemplate.jsp` is returned to the browser
+- The server-side is working perfectly. The failure is client-side/browser-side.
+
+### Two AICC Launch Paths in MRCE
+
+| Path | Controller Method | Behavior | Used By |
+|------|-------------------|----------|---------|
+| `/nu/aicc/lms/landing` | `viewAICCLanding()` | Opens in **new browser window/tab** | Workday (`wd5-media.myworkdaycdn.com`) |
+| `/aicc/lms/landing` | `viewAICCLMSLanding()` | Returns `aiccLmsTemplate.jsp` — loaded **inside iframe** | Cornerstone (`mymlc.csod.com`), Clark County (`ns2cloud.com`) |
+
+### Why the error occurs (architecture)
+
+`aiccLmsTemplate.jsp` (line ~186) contains:
+```html
+<iframe src="" id="targetIFrame" name="targetIFrame" onload="Landing.frameLoad();"
+        frameborder="0" scrolling="yes" width="900" height="650"></iframe>
+```
+
+**Cornerstone's nesting:**
+```
+Cornerstone (mymlc.csod.com) SPA
+  └─ iframe → nursing.ceconnection.com/aicc/lms/landing (aiccLmsTemplate.jsp)
+       └─ iframe (targetIFrame) → nursing.ceconnection.com/nu/aicc/lms/steps/...
+```
+
+**Workday's approach (works fine):**
+```
+Workday opens → NEW WINDOW → nursing.ceconnection.com/nu/aicc/lms/landing
+  └─ iframe (targetIFrame) → nursing.ceconnection.com/nu/aicc/lms/steps/...
+```
+No parent iframe = no cross-origin nesting = cookies flow normally.
+
+### Domain validation code paths
+
+1. **`AICC_DOMAIN` DB table** — `AICCStepController.isValidDomain()` calls `aiccDomainDAO.ensureByDomain(referer)`. If domain not found → `AICCException("UnAuthorized AICC Domain")`
+2. **`aicc-allowed-domains` in mrce-configuration.xml** — `MRCEConfiguration.isAICCDomainAllowed()` extracts the top private domain using Guava's `InternetDomainName` and checks against the config list. If not found → `PermissionDeniedException("You cannot access this resource.")`
+
+### Why we could NOT reproduce
+
+- **Ramananda tested** with the customer's AICC zip file and a freshly downloaded package → works fine (because not inside Cornerstone's iframe)
+- **Piyush tested** with the AICC Player project in both iframe and "Cornerstone Mode" (blob URL nested iframe simulation) → works fine
+- **Conclusion:** The blob URL approach doesn't fully replicate Cornerstone's environment because it still shares origin context. The real issue is environment-specific.
+
+### Cornerstone Mode Feature (added to AICC Player)
+
+A **"🏢 Cornerstone LMS Mode"** toggle was added to the Player to attempt reproduction:
+- Creates a blob URL HTML page mimicking Cornerstone's UI (header, toolbar)
+- Embeds the AICC launch URL in a nested iframe with `sandbox` attributes
+- Visually indicates Cornerstone simulation with purple badge and border
+- Close button uses `postMessage` to communicate with parent frame
+- **Result:** Could not reproduce the "refused to connect" error — confirming the issue is customer-environment specific
+
+### Root Cause Assessment
+
+Since the MRCE backend processes the request successfully and the error cannot be reproduced in any test environment, the "refused to connect" is caused by one or more of:
+
+| Possible Cause | Explanation |
+|---|---|
+| **Corporate proxy/firewall** | Mosaic Life Care's network blocks `nursing.ceconnection.com` when accessed as a sub-resource inside `csod.com` iframe |
+| **Cornerstone's CSP headers** | Cornerstone may set restrictive `Content-Security-Policy: frame-src` that excludes `nursing.ceconnection.com` — this is admin-configured |
+| **Browser third-party cookie blocking** | Chrome's SameSite=Lax default + nested cross-origin iframes prevent JSESSIONID from being set |
+| **Enterprise Chrome policies** | Managed browser can block third-party iframe content |
+| **DNS/network intermittent failure** | TCP-level "refused to connect" suggests connection never established |
+
+### Jira Comments Posted
+
+1. **Comment 1 (Jun 2):** Full technical analysis — logs confirm backend works, root cause is browser-side nested iframe cookie/network issue, suggested fix is to configure Cornerstone to open in new window
+2. **Comment 2 (Jun 2):** Asked customer to verify if Cornerstone opens content in iframe or new window, and to try another package
+
+### Recommended Actions (for the customer)
+
+1. Check Cornerstone admin → Content Player settings → change "Open In" to **new window/popup**
+2. Ask IT to whitelist `nursing.ceconnection.com` in corporate proxy/firewall
+3. Try from a non-corporate network (personal hotspot) to confirm network-related
+4. Check if Chrome enterprise policies restrict third-party iframe content
+
+### Files Involved
+
+- `MRCE-apps/mrce/src/main/java/com/wolterskluwer/mrce/controller/AICCStepController.java` — AICC landing & step controllers
+- `MRCE-apps/mrce/src/main/java/com/wolterskluwer/mrce/web/MRCEConfiguration.java` — `isAICCDomainAllowed()`
+- `MRCE-apps/mrce/src/main/java/com/wolterskluwer/mrce/dao/AICCDomainDAO.java` — DB domain whitelist
+- `MRCE-apps/mrce/src/main/webapp/WEB-INF/views/aicc/aiccLmsTemplate.jsp` — the rendered template with `targetIFrame`
+- `MRCE-apps/mrce/src/main/webapp/WEB-INF/views/aicc/aiccContentTemplate.jsp` — content loaded inside targetIFrame
+- `MRCE-apps/mrce/src/main/webapp/WEB-INF/web.xml` — filter mappings (thirdPartyCookieFilter on `/aicc/*`)
+- `MRCE-apps/mrce/src/main/resources/security-context.xml` — Spring Security config
+- `MRCE-apps/mrce/src/test/resources/mrce-configuration.xml` — `<aicc-allowed-domains>` config
